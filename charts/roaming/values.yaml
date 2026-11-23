@@ -1,0 +1,119 @@
+replicaCount: 2
+
+image:
+  repository: docker.io/pnetrepo/roaming
+  # Defaults to the chart appVersion (the git tag the chart was released from)
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 8080
+  # Actuator (health, info, prometheus); never routed through the ingress
+  managementPort: 8081
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: roaming.example.local
+      paths:
+        - path: /device-roaming-status
+          pathType: Prefix
+  tls: []
+
+# Application settings, rendered into a ConfigMap and passed as environment variables
+config:
+  # Empty: global.camara.tepBaseUrl when installed by the camara umbrella chart, else http://tep:8080/tep-api/v1
+  tepBaseUrl: ""
+  tepConnectTimeout: 2s
+  tepReadTimeout: 5s
+  logFormat: ecs
+  springdocEnabled: true
+  shutdownTimeout: 20s
+  javaToolOptions: "-XX:MaxRAMPercentage=75"
+  # Access tokens (the spec's openId scope). true needs authIssuerUri: the realm's issuer, exactly as it
+  # appears in tokens' "iss", e.g. https://keycloak.example/realms/camara. false: no auth, lab only.
+  # Empty: global.camara.auth.enabled when installed by the camara umbrella chart, else true
+  authEnabled: ""
+  # Empty: the umbrella's Keycloak or global.camara.auth.issuerUri, if any
+  authIssuerUri: ""
+  # Claim carrying the subscriber's phone number in three-legged tokens.
+  # Empty: global.camara.auth.phoneNumberClaim, else phone_number
+  authPhoneNumberClaim: ""
+  # Service-specific settings, added to the ConfigMap as ENV_NAME: value
+  extra: {}
+
+# Extra environment for the container, e.g. secrets
+extraEnv: []
+extraEnvFrom: []
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 768Mi
+
+# Must exceed config.shutdownTimeout plus the preStop delay
+terminationGracePeriodSeconds: 35
+preStopSleepSeconds: 5
+
+probes:
+  startup:
+    periodSeconds: 3
+    failureThreshold: 40
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 5
+    failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

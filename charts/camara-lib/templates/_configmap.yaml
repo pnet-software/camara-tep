@@ -1,0 +1,31 @@
+{{- define "camara-lib.configmap" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "camara-lib.fullname" . }}
+  labels:
+    {{- include "camara-lib.labels" . | nindent 4 }}
+data:
+  SERVER_PORT: "8080"
+  MANAGEMENT_PORT: "8081"
+  TEP_BASE_URL: {{ include "camara-lib.tepBaseUrl" . | quote }}
+  TEP_CONNECT_TIMEOUT: {{ .Values.config.tepConnectTimeout | quote }}
+  TEP_READ_TIMEOUT: {{ .Values.config.tepReadTimeout | quote }}
+  LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  SPRINGDOC_ENABLED: {{ .Values.config.springdocEnabled | quote }}
+  SHUTDOWN_TIMEOUT: {{ .Values.config.shutdownTimeout | quote }}
+  JAVA_TOOL_OPTIONS: {{ .Values.config.javaToolOptions | quote }}
+  {{- /* Not `required`: lint renders the defaults. With auth on and no issuer, the app refuses to start and says so */}}
+  AUTH_ENABLED: {{ include "camara-lib.authEnabled" . | quote }}
+  AUTH_ISSUER_URI: {{ include "camara-lib.authIssuerUri" . | quote }}
+  AUTH_PHONE_NUMBER_CLAIM: {{ include "camara-lib.authPhoneNumberClaim" . | quote }}
+  {{- /* Only with the umbrella's in-cluster Keycloak: an empty value would break Spring Boot's token decoder */}}
+  {{- with include "camara-lib.authJwkSetUri" . }}
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: {{ . | quote }}
+  {{- end }}
+  {{- /* Settings only one service has, as ENV_NAME: value. Values are templates, so a default can name the
+         release's own resources, e.g. {{ include "camara-lib.fullname" . }}-redis */}}
+  {{- range $key, $value := .Values.config.extra }}
+  {{ $key }}: {{ tpl ($value | toString) $ | quote }}
+  {{- end }}
+{{- end }}

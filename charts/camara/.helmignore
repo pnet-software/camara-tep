@@ -1,0 +1,14 @@
+.DS_Store
+.git/
+.gitignore
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.vscode/
+.idea/
+ci-values.yaml
+ci-values-external.yaml
+local-src/
+local-charts.sh

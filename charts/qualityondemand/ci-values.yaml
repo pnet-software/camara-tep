@@ -1,0 +1,32 @@
+# Turns every optional template on so `helm lint` / `helm template` cover them in CI
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: qualityondemand.ci.local
+      paths:
+        - path: /quality-on-demand
+          pathType: Prefix
+  tls:
+    - hosts:
+        - qualityondemand.ci.local
+      secretName: qualityondemand-tls
+autoscaling:
+  enabled: true
+serviceMonitor:
+  enabled: true
+imagePullSecrets:
+  - name: registry-pull
+extraEnv:
+  - name: EXAMPLE
+    value: "1"
+redis:
+  auth:
+    enabled: true
+    password: ci-only-password
+  persistence:
+    enabled: true
+config:
+  authIssuerUri: https://keycloak.ci.local/realms/camara
+  extra:
+    EXAMPLE_SETTING: "1"

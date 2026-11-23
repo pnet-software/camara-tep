@@ -1,0 +1,17 @@
+apiVersion: v2
+# <service>-chart: helm push takes the Docker Hub repository from this name, so the chart doesn't land in the
+# image's repository. Kubernetes resources drop the suffix (camara-lib.name).
+name: qosprofiles-chart
+description: CAMARA QoS Profiles API (v1.1.0) backed by the TEP 5G core exposure API
+type: application
+# Overwritten by CI at package time: version = git tag without "v", appVersion = git tag
+version: 1.0.0
+appVersion: "v1.0.0"
+keywords:
+  - camara
+  - qos-profiles
+  - tep
+dependencies:
+  - name: camara-lib
+    version: 1.0.0
+    repository: file://../camara-lib

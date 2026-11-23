@@ -1,0 +1,16 @@
+# Developer conveniences; activate with SPRING_PROFILES_ACTIVE=local
+# No token needed unless AUTH_ENABLED=true (with AUTH_ISSUER_URI, e.g. the dev/keycloak realm)
+camara:
+  auth:
+    enabled: ${AUTH_ENABLED:false}
+
+logging:
+  structured:
+    format:
+      console: ""
+  pattern:
+    # The request's correlator and API client on every plain-text line
+    correlation: "[%X{correlator:-} %X{clientId:-}] "
+  level:
+    gr.pnet.camara: DEBUG
+    org.springframework.web.client: DEBUG

@@ -1,0 +1,250 @@
+{{- /*
+  Keycloak for the APIs' tokens: only when global.camara.keycloak.deploy and some deployed API has auth on.
+  Its public URL is the issuer in every token; the APIs fetch its signing keys through the Service below.
+*/}}
+{{- if include "camara.deployKeycloak" . }}
+{{- $name := include "camara.keycloakName" . }}
+{{- $kc := .Values.keycloak }}
+{{- $path := include "camara.keycloakPath" . }}
+{{- $realm := include "camara.realm" . }}
+{{- $adminSecret := default $name $kc.admin.existingSecret }}
+{{- $realmConfigMap := default (printf "%s-realm" $name) $kc.realm.existingConfigMap }}
+{{- $devFile := eq $kc.database.vendor "dev-file" }}
+{{- $bundledRealm := and $kc.realm.import (not $kc.realm.existingConfigMap) }}
+{{- /* The bundled realm, renamed to global.camara.keycloak.realm and opened to Swagger UI's URL */}}
+{{- $realmJson := .Files.Get "files/camara-realm.json" | fromJson }}
+{{- $_ := set $realmJson "realm" $realm }}
+{{- with include "camara.swaggerUiUrl" . }}
+{{- $url := . }}
+{{- range $realmJson.clients }}
+{{- $_ := set . "redirectUris" (append (.redirectUris | default list) (printf "%s/*" $url)) }}
+{{- $_ := set . "webOrigins" (append (.webOrigins | default list) $url) }}
+{{- end }}
+{{- end }}
+{{- $realmText := toPrettyJson $realmJson }}
+{{- if not $kc.admin.existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+    app.kubernetes.io/name: keycloak
+type: Opaque
+data:
+  {{ $kc.admin.existingSecretUsernameKey }}: {{ $kc.admin.username | b64enc | quote }}
+  {{ $kc.admin.existingSecretPasswordKey }}: {{ $kc.admin.password | b64enc | quote }}
+---
+{{- end }}
+{{- if $bundledRealm }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $realmConfigMap }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+    app.kubernetes.io/name: keycloak
+data:
+  {{ $realm }}.json: {{ $realmText | quote }}
+---
+{{- end }}
+{{- if and $devFile $kc.persistence.enabled (not $kc.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+    app.kubernetes.io/name: keycloak
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with $kc.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $kc.persistence.size }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+    app.kubernetes.io/name: keycloak
+spec:
+  type: {{ $kc.service.type }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq $kc.service.type "NodePort") $kc.service.nodePort }}
+      nodePort: {{ $kc.service.nodePort }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+    app.kubernetes.io/name: keycloak
+spec:
+  # One Keycloak on its data (KC_CACHE=local); more replicas need postgres and Keycloak's clustering
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        {{- if $bundledRealm }}
+        checksum/realm: {{ $realmText | sha256sum }}
+        {{- end }}
+      labels:
+        {{- include "camara.labels" . | nindent 8 }}
+        app.kubernetes.io/name: keycloak
+    spec:
+      {{- with include "camara.imagePullSecrets" . }}
+      {{- . | trim | nindent 6 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      # The image's keycloak user
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 0
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak
+          image: "{{ $kc.image.repository }}:{{ $kc.image.tag }}"
+          imagePullPolicy: {{ $kc.image.pullPolicy }}
+          args:
+            - start
+            {{- if $kc.realm.import }}
+            - --import-realm
+            {{- end }}
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $adminSecret }}
+                  key: {{ $kc.admin.existingSecretUsernameKey }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $adminSecret }}
+                  key: {{ $kc.admin.existingSecretPasswordKey }}
+            # The issuer in every token: <publicUrl>/realms/<realm>, however Keycloak is reached
+            - name: KC_HOSTNAME
+              value: {{ .Values.global.camara.keycloak.publicUrl | quote }}
+            # The APIs fetch the signing keys at the Service's address
+            - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+              value: "true"
+            - name: KC_HTTP_RELATIVE_PATH
+              value: {{ default "/" $path | quote }}
+            # TLS ends at the ingress
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            # One replica: no cluster to form
+            - name: KC_CACHE
+              value: local
+            - name: KC_DB
+              value: {{ $kc.database.vendor | quote }}
+            {{- if not $devFile }}
+            - name: KC_DB_URL
+              value: {{ $kc.database.postgres.url | quote }}
+            - name: KC_DB_USERNAME
+              value: {{ $kc.database.postgres.username | quote }}
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "keycloak.database.postgres.existingSecret is required with keycloak.database.vendor=postgres" $kc.database.postgres.existingSecret }}
+                  key: {{ $kc.database.postgres.existingSecretPasswordKey }}
+            {{- end }}
+            {{- with $kc.extraEnv }}
+            {{- tpl (toYaml .) $ | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: management
+              containerPort: 9000
+              protocol: TCP
+          # Health is on the management port, under the same base path
+          startupProbe:
+            httpGet:
+              path: {{ $path }}/health/started
+              port: management
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: {{ $path }}/health/ready
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: {{ $path }}/health/live
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+          # The root filesystem stays writable: "start" rebuilds Keycloak's server image in place
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml $kc.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/keycloak/data
+            {{- if $kc.realm.import }}
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: data
+          {{- if and $devFile $kc.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default $name $kc.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if $kc.realm.import }}
+        - name: realm
+          configMap:
+            name: {{ $realmConfigMap }}
+        {{- end }}
+      {{- with $kc.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $kc.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $kc.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

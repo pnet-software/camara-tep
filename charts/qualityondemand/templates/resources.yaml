@@ -1,0 +1,16 @@
+{{- /* The service's resources come from the shared camara-lib chart; redis.yaml adds the Redis it uses */}}
+{{ include "camara-lib.serviceaccount" . }}
+---
+{{ include "camara-lib.configmap" . }}
+---
+{{ include "camara-lib.service" . }}
+---
+{{ include "camara-lib.deployment" . }}
+---
+{{ include "camara-lib.ingress" . }}
+---
+{{ include "camara-lib.hpa" . }}
+---
+{{ include "camara-lib.pdb" . }}
+---
+{{ include "camara-lib.servicemonitor" . }}

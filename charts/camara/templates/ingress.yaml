@@ -1,0 +1,93 @@
+{{- /*
+  One Ingress for the release: each deployed API's path, spec file and protected resource metadata, Keycloak's
+  public URL, Swagger UI at /.
+  Actuator and Quality On Demand's /tep-notifications are not routed, so they stay inside the cluster.
+*/}}
+{{- if .Values.ingress.enabled }}
+{{- $apis := (include "camara.enabledApis" . | fromYaml).apis }}
+{{- $keycloak := and (include "camara.deployKeycloak" .) .Values.keycloak.ingress.enabled }}
+{{- $keycloakHost := "" }}
+{{- if $keycloak }}
+{{- $keycloakHost = include "camara.keycloakHost" . }}
+{{- end }}
+{{- $keycloakPath := include "camara.keycloakPath" . }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- range $apis }}
+          {{- $service := include "camara.apiServiceName" (dict "root" $ "key" .key) }}
+          - path: {{ .prefix }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $service }}
+                port:
+                  name: http
+          # The spec Swagger UI loads, served by the API itself (with the issuer in its openIdConnectUrl)
+          - path: {{ .spec }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $service }}
+                port:
+                  name: http
+          # Its OAuth protected resource metadata (RFC 9728), which its 401s link to: its own scopes, under its path
+          - path: /.well-known/oauth-protected-resource{{ .prefix }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $service }}
+                port:
+                  name: http
+          {{- end }}
+          {{- if and $keycloak (eq $keycloakHost .Values.ingress.host) }}
+          - path: {{ $keycloakPath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "camara.keycloakName" . }}
+                port:
+                  name: http
+          {{- end }}
+          {{- if and .Values.swaggerUi.enabled $apis }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "camara.swaggerUiName" . }}
+                port:
+                  name: http
+          {{- end }}
+    {{- if and $keycloak (ne $keycloakHost .Values.ingress.host) }}
+    # Keycloak's public URL is on a host of its own
+    - host: {{ $keycloakHost | quote }}
+      http:
+        paths:
+          - path: {{ default "/" $keycloakPath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "camara.keycloakName" . }}
+                port:
+                  name: http
+    {{- end }}
+{{- end }}

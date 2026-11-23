@@ -1,0 +1,18 @@
+{{ include "camara-lib.fullname" . }} {{ .Chart.AppVersion }} is deployed.
+
+Image: {{ include "camara-lib.image" . }}
+TEP:   {{ include "camara-lib.tepBaseUrl" . }}
+{{- if eq (include "camara-lib.authEnabled" .) "false" }}
+Auth:  OFF. Any caller can query any subscriber; lab use only.
+{{- else if not (include "camara-lib.authIssuerUri" .) }}
+Auth:  ON but no issuer is set (config.authIssuerUri). Pods will refuse to start until it is set.
+{{- else }}
+Auth:  tokens from {{ include "camara-lib.authIssuerUri" . }}, scope device-roaming-status:read
+{{- end }}
+
+API (in-cluster):
+  POST http://{{ include "camara-lib.fullname" . }}.{{ .Release.Namespace }}:{{ .Values.service.port }}/device-roaming-status/v1/retrieve
+
+Health and metrics (management port, not exposed by the ingress):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "camara-lib.fullname" . }} {{ .Values.service.managementPort }}
+  curl http://localhost:{{ .Values.service.managementPort }}/actuator/health

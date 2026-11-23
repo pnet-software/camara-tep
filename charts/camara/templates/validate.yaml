@@ -1,0 +1,2 @@
+{{- /* Renders nothing: fails the install, before anything is created, when a required setting is missing */}}
+{{- include "camara.validate" . }}

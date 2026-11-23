@@ -1,0 +1,27 @@
+# Some APIs only, with a Keycloak and a Redis that already exist, so CI covers those paths too
+global:
+  camara:
+    tepBaseUrl: http://tep.tep-system:8080/tep-api/v1
+    auth:
+      issuerUri: https://keycloak.ci.local/realms/camara
+    keycloak:
+      deploy: false
+
+reachability:
+  enabled: true
+deviceswap:
+  enabled: true
+  config:
+    authEnabled: false
+qualityondemand:
+  enabled: true
+  redis:
+    enabled: false
+    external:
+      host: redis.shared.svc
+      port: 6380
+      existingSecret: shared-redis
+
+ingress:
+  enabled: true
+  host: camara.ci.local

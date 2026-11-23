@@ -1,0 +1,15 @@
+{{- define "camara-lib.pdb" -}}
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "camara-lib.fullname" . }}
+  labels:
+    {{- include "camara-lib.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "camara-lib.selectorLabels" . | nindent 6 }}
+{{- end }}
+{{- end }}

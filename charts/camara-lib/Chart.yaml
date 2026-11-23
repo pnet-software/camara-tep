@@ -1,0 +1,9 @@
+apiVersion: v2
+name: camara-lib
+description: Shared templates for the CAMARA service charts (hardened Deployment, Service, ConfigMap, Ingress, HPA, PDB, ServiceMonitor)
+type: library
+# Not published on its own: service charts vendor it at package time (helm dependency update)
+version: 1.0.0
+keywords:
+  - camara
+  - tep

@@ -1,0 +1,290 @@
+{
+  "realm": "camara",
+  "displayName": "CAMARA (local test realm)",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 900,
+  "clientScopes": [
+    {
+      "name": "basic",
+      "description": "Standard claims every token carries (sub)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "device-reachability-status:read",
+      "description": "CAMARA Device Reachability Status: read a device's reachability",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Check whether your device is reachable"
+      }
+    },
+    {
+      "name": "device-roaming-status:read",
+      "description": "CAMARA Device Roaming Status: read whether a device is roaming, and in which country",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Check whether your device is roaming, and in which country"
+      }
+    },
+    {
+      "name": "location-verification:verify",
+      "description": "CAMARA Device Location Verification: verify whether a device is within an area",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Check whether your device is within a given area"
+      }
+    },
+    {
+      "name": "device-swap",
+      "description": "CAMARA Device Swap: both operations, retrieve-date and check",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Check when your SIM was last put in a different device"
+      }
+    },
+    {
+      "name": "device-swap:retrieve-date",
+      "description": "CAMARA Device Swap: the date of a phone number's latest device swap",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "See when your SIM was last put in a different device"
+      }
+    },
+    {
+      "name": "device-swap:check",
+      "description": "CAMARA Device Swap: whether a phone number's device was swapped within a period",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Check whether your SIM was put in a different device recently"
+      }
+    },
+    {
+      "name": "sim-swap",
+      "description": "CAMARA SIM Swap: both operations, retrieve-date and check",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Check when your phone number last moved to a new SIM"
+      }
+    },
+    {
+      "name": "sim-swap:retrieve-date",
+      "description": "CAMARA SIM Swap: the date of a phone number's latest SIM swap",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "See when your phone number last moved to a new SIM"
+      }
+    },
+    {
+      "name": "sim-swap:check",
+      "description": "CAMARA SIM Swap: whether a phone number's SIM was swapped within a period",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Check whether your phone number moved to a new SIM recently"
+      }
+    },
+    {
+      "name": "qos-profiles:read",
+      "description": "CAMARA QoS Profiles: read the QoS profiles on offer, optionally those available to a device",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "See which network quality profiles are available to your device"
+      }
+    },
+    {
+      "name": "quality-on-demand:sessions:create",
+      "description": "CAMARA Quality on Demand: create a QoS session for a device",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Request better network quality for your device"
+      }
+    },
+    {
+      "name": "quality-on-demand:sessions:read",
+      "description": "CAMARA Quality on Demand: read a QoS session",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "See a network quality session on your device"
+      }
+    },
+    {
+      "name": "quality-on-demand:sessions:delete",
+      "description": "CAMARA Quality on Demand: delete a QoS session",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "End a network quality session on your device"
+      }
+    },
+    {
+      "name": "quality-on-demand:sessions:update",
+      "description": "CAMARA Quality on Demand: extend a QoS session's duration",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Extend a network quality session on your device"
+      }
+    },
+    {
+      "name": "quality-on-demand:sessions:retrieve-by-device",
+      "description": "CAMARA Quality on Demand: list a device's QoS sessions",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "List the network quality sessions on your device"
+      }
+    }
+  ],
+  "defaultDefaultClientScopes": ["basic"],
+  "defaultOptionalClientScopes": [
+    "device-reachability-status:read",
+    "device-roaming-status:read",
+    "location-verification:verify",
+    "device-swap",
+    "device-swap:retrieve-date",
+    "device-swap:check",
+    "sim-swap",
+    "sim-swap:retrieve-date",
+    "sim-swap:check",
+    "qos-profiles:read",
+    "quality-on-demand:sessions:create",
+    "quality-on-demand:sessions:read",
+    "quality-on-demand:sessions:delete",
+    "quality-on-demand:sessions:update",
+    "quality-on-demand:sessions:retrieve-by-device"
+  ],
+  "clients": [
+    {
+      "clientId": "acme-backend",
+      "name": "Two-legged API consumer (client credentials)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "acme-backend-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "webOrigins": ["http://localhost:9091"],
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": [
+        "device-reachability-status:read",
+        "device-roaming-status:read",
+        "location-verification:verify",
+        "device-swap",
+        "device-swap:retrieve-date",
+        "device-swap:check",
+        "sim-swap",
+        "sim-swap:retrieve-date",
+        "sim-swap:check",
+        "qos-profiles:read",
+        "quality-on-demand:sessions:create",
+        "quality-on-demand:sessions:read",
+        "quality-on-demand:sessions:delete",
+        "quality-on-demand:sessions:update",
+        "quality-on-demand:sessions:retrieve-by-device"
+      ]
+    },
+    {
+      "clientId": "subscriber-app",
+      "name": "Three-legged API consumer (acts for a subscriber who logs in)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:9091/*"],
+      "webOrigins": ["http://localhost:9091"],
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": [
+        "device-reachability-status:read",
+        "device-roaming-status:read",
+        "location-verification:verify",
+        "device-swap",
+        "device-swap:retrieve-date",
+        "device-swap:check",
+        "sim-swap",
+        "sim-swap:retrieve-date",
+        "sim-swap:check",
+        "qos-profiles:read",
+        "quality-on-demand:sessions:create",
+        "quality-on-demand:sessions:read",
+        "quality-on-demand:sessions:delete",
+        "quality-on-demand:sessions:update",
+        "quality-on-demand:sessions:retrieve-by-device"
+      ],
+      "protocolMappers": [
+        {
+          "name": "phone_number",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "phone_number",
+            "claim.name": "phone_number",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.org",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Subscriber",
+      "attributes": {
+        "phone_number": ["+306912345678"]
+      },
+      "credentials": [
+        { "type": "password", "value": "alice", "temporary": false }
+      ]
+    }
+  ]
+}

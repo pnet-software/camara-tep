@@ -1,0 +1,202 @@
+{{- /*
+  One Swagger UI for every deployed API's spec. The image's own entrypoint rewrites files at start, which a
+  read-only root filesystem forbids, so nginx runs directly with the configuration and page settings below.
+  Its nginx also forwards each API's spec file and path to the API's Service, so the UI works on its own port
+  (e.g. a NodePort) as well as behind the Ingress: "Try it out" calls the APIs through the UI's address, as their
+  specs' server URLs are relative.
+*/}}
+{{- $apis := (include "camara.enabledApis" . | fromYaml).apis }}
+{{- if and .Values.swaggerUi.enabled $apis }}
+{{- $name := include "camara.swaggerUiName" . }}
+{{- $ui := .Values.swaggerUi }}
+{{- $urls := list }}
+{{- range $apis }}
+{{- $urls = append $urls (dict "name" .title "url" .spec) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+    app.kubernetes.io/name: swagger-ui
+data:
+  nginx.conf: |
+    worker_processes 1;
+    pid /tmp/nginx.pid;
+    error_log /dev/stderr warn;
+    events {
+      worker_connections 1024;
+    }
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      access_log off;
+      client_body_temp_path /tmp/client_body;
+      proxy_temp_path /tmp/proxy;
+      fastcgi_temp_path /tmp/fastcgi;
+      uwsgi_temp_path /tmp/uwsgi;
+      scgi_temp_path /tmp/scgi;
+      server {
+        listen 8080;
+        root /usr/share/nginx/html;
+        index index.html;
+        location = /healthz {
+          default_type text/plain;
+          return 200 "ok\n";
+        }
+        {{- range $apis }}
+        {{- $upstream := printf "http://%s:8080" (include "camara.apiServiceName" (dict "root" $ "key" .key)) }}
+        # {{ .title }}: its spec, its protected resource metadata and its API, from its Service
+        location = {{ .spec }} {
+          proxy_pass {{ $upstream }};
+          include /etc/nginx/camara-proxy.conf;
+        }
+        location = /.well-known/oauth-protected-resource{{ .prefix }} {
+          proxy_pass {{ $upstream }};
+          include /etc/nginx/camara-proxy.conf;
+        }
+        location ^~ {{ .prefix }}/ {
+          proxy_pass {{ $upstream }};
+          include /etc/nginx/camara-proxy.conf;
+        }
+        {{- end }}
+      }
+    }
+  camara-proxy.conf: |
+    proxy_http_version 1.1;
+    # The address the client used, so the API's Location headers and links point back through this UI
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 60s;
+  # The specs come from the APIs themselves, with Authorize pointing at the issuer. Authorize offers only the
+  # selected API's scopes, not every scope of the realm: files/swagger-scope-filter.js
+  swagger-initializer.js: |
+    window.onload = function () {
+      window.ui = SwaggerUIBundle({
+        urls: {{ toJson $urls }},
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        responseInterceptor: {{ $.Files.Get "files/swagger-scope-filter.js" | trim | nindent 8 | trim }},
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+        layout: "StandaloneLayout",
+        operationsSorter: "alpha"
+      });
+    };
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+    app.kubernetes.io/name: swagger-ui
+spec:
+  type: {{ $ui.service.type }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq $ui.service.type "NodePort") $ui.service.nodePort }}
+      nodePort: {{ $ui.service.nodePort }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/name: swagger-ui
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "camara.labels" . | nindent 4 }}
+    app.kubernetes.io/name: swagger-ui
+spec:
+  replicas: {{ $ui.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: swagger-ui
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ printf "%s%s%s" (toJson $urls) (include "camara.apis" .) (.Files.Get "files/swagger-scope-filter.js") | sha256sum }}
+      labels:
+        {{- include "camara.labels" . | nindent 8 }}
+        app.kubernetes.io/name: swagger-ui
+    spec:
+      {{- with include "camara.imagePullSecrets" . }}
+      {{- . | trim | nindent 6 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      # The image's nginx user
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: swagger-ui
+          image: "{{ $ui.image.repository }}:{{ $ui.image.tag }}"
+          imagePullPolicy: {{ $ui.image.pullPolicy }}
+          command: ["nginx", "-g", "daemon off;"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml $ui.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: config
+              mountPath: /etc/nginx/camara-proxy.conf
+              subPath: camara-proxy.conf
+              readOnly: true
+            - name: config
+              mountPath: /usr/share/nginx/html/swagger-initializer.js
+              subPath: swagger-initializer.js
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+        - name: tmp
+          emptyDir: {}
+      {{- with $ui.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ui.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ui.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,169 @@
+# Any set of the CAMARA APIs in one release. Turn on the APIs you want, set what they need, and the chart adds
+# what they share: one Swagger UI for all of them, Keycloak when one needs tokens, Redis for Quality On Demand.
+#
+# Each API block below is that service chart's own values (charts/<service>/values.yaml): anything there can be
+# set here under the API's key, e.g. roaming.replicaCount or qualityondemand.config.extra.QOD_API_ROOT.
+
+# Shared by every API this release deploys. An API's own config.* setting wins over these.
+global:
+  camara:
+    # TEP's exposure API, as the pods reach it
+    tepBaseUrl: http://tep:8080/tep-api/v1
+    imagePullSecrets: []
+    auth:
+      # Tokens for every API unless it says otherwise (<api>.config.authEnabled: false). Off is lab only.
+      enabled: true
+      # Claim carrying the subscriber's phone number in three-legged tokens
+      phoneNumberClaim: phone_number
+      # An issuer of your own, exactly as tokens carry it in "iss", e.g. https://keycloak.example.com/realms/camara.
+      # Used when keycloak.deploy is false; the steps to set one up are in README.md and printed on install.
+      issuerUri: ""
+    keycloak:
+      # true: run Keycloak in this release (only if some deployed API has auth on). false: use auth.issuerUri.
+      deploy: true
+      # Where clients and Swagger UI reach this Keycloak, e.g. https://camara.example.com/auth: tokens' issuer is
+      # <publicUrl>/realms/<realm>. Its path is Keycloak's base path. The APIs fetch keys through the Service.
+      publicUrl: ""
+      realm: camara
+
+# ---- The APIs ----------------------------------------------------------------------------------------------
+# Each API runs the released chart pinned in Chart.yaml, with that release's image (its appVersion). To upgrade
+# one, bump its version there. <api>.image.tag overrides the image, e.g. to try a build that isn't released.
+
+reachability:
+  enabled: false
+
+roaming:
+  enabled: false
+
+locationverification:
+  enabled: false
+
+deviceswap:
+  enabled: false
+
+simswap:
+  enabled: false
+
+qosprofiles:
+  enabled: false
+
+qualityondemand:
+  enabled: false
+  # config:
+  #   extra:
+  #     # The API's public root, the source of the CloudEvents sent to a session's sink
+  #     QOD_API_ROOT: https://camara.example.com
+  # Where sessions are kept
+  redis:
+    # true: a Redis pod in this release. false: the Redis in external
+    enabled: true
+    auth:
+      enabled: false
+      # Leave existingSecret empty and set password to have the chart create the Secret
+      existingSecret: ""
+      existingSecretKey: password
+      password: ""
+    # Off: sessions are lost when the Redis pod restarts
+    persistence:
+      enabled: false
+      size: 1Gi
+      storageClass: ""
+    external:
+      host: ""
+      port: 6379
+      # The Secret holding its password, if it has one
+      existingSecret: ""
+      existingSecretKey: password
+
+# ---- Shared parts ------------------------------------------------------------------------------------------
+
+# Keycloak, when global.camara.keycloak.deploy and some deployed API has auth on
+keycloak:
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.5.4"
+    pullPolicy: IfNotPresent
+  # The bootstrap admin (console at <publicUrl>/admin). Required: password, or existingSecret
+  admin:
+    username: admin
+    password: ""
+    existingSecret: ""
+    existingSecretUsernameKey: username
+    existingSecretPasswordKey: password
+  database:
+    # dev-file: an embedded database in /opt/keycloak/data; lab only, as Keycloak says. postgres: a database of yours
+    vendor: dev-file
+    postgres:
+      url: ""          # e.g. jdbc:postgresql://postgres:5432/keycloak
+      username: keycloak
+      existingSecret: ""
+      existingSecretPasswordKey: password
+  # Keeps dev-file's data (users, clients, keys) across restarts. Off: the realm is imported afresh on every start
+  persistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+    existingClaim: ""
+  realm:
+    # Import files/camara-realm.json (the APIs' scopes, test clients acme-backend and subscriber-app, user alice;
+    # fixed test secrets: change them for anything shared). Kept as is once the realm exists.
+    import: true
+    # A ConfigMap of your own with <realm>.json instead of the bundled file
+    existingConfigMap: ""
+    # Added to the bundled clients' redirect URIs and web origins, so Swagger UI can get tokens.
+    # Empty: the ingress host
+    swaggerUiUrl: ""
+  # true: route publicUrl through this chart's Ingress (needs ingress.enabled). false: you expose it, e.g. a NodePort
+  ingress:
+    enabled: true
+  # With NodePort, nodePort must be the port in publicUrl
+  service:
+    type: ClusterIP
+    nodePort: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      memory: 1536Mi
+  # Extra environment, e.g. KC_LOG_LEVEL. Values may be templates
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# One Swagger UI listing the specs of every deployed API, at / on the ingress host
+swaggerUi:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: swaggerapi/swagger-ui
+    tag: v5.33.3
+    pullPolicy: IfNotPresent
+  # Without an Ingress, NodePort with a fixed nodePort: the UI, every spec and every API at http://<node-ip>:<nodePort>/
+  # (and the bundled realm lets that address get tokens)
+  service:
+    type: ClusterIP
+    nodePort: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      memory: 64Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# One Ingress for everything: each API's path and spec file, Keycloak's path, and Swagger UI at /.
+# Actuator and Quality On Demand's TEP notifications are never routed.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: camara.example.local
+  tls: []
+  #  - hosts:
+  #      - camara.example.local
+  #    secretName: camara-tls

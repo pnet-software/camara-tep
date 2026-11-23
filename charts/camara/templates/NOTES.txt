@@ -1,0 +1,54 @@
+{{- $apis := (include "camara.enabledApis" . | fromYaml).apis }}
+{{- $base := "" }}
+{{- if .Values.ingress.enabled }}
+{{- $base = printf "%s://%s" (ternary "https" "http" (gt (len .Values.ingress.tls) 0)) .Values.ingress.host }}
+{{- end }}
+{{- if not $apis }}
+No API is enabled, so nothing was deployed. Turn some on, e.g. --set reachability.enabled=true
+{{- else }}
+CAMARA APIs in release {{ .Release.Name }} (TEP: {{ .Values.global.camara.tepBaseUrl }}):
+{{- range $apis }}
+{{- $auth := include "camara.apiAuthEnabled" (dict "root" $ "key" .key) }}
+  {{ printf "%-28s" .title }} {{ if $base }}{{ $base }}{{ else }}http://{{ include "camara.apiServiceName" (dict "root" $ "key" .key) }}:8080{{ end }}{{ .prefix }}  ({{ if eq $auth "true" }}tokens{{ else }}NO AUTH, lab only{{ end }}, chart {{ include "camara.apiChartVersion" (dict "root" $ "key" .key) }}{{ with ((index $.Values .key).image | default dict).tag }}, image {{ . }}{{ end }})
+{{- end }}
+{{- if .Values.swaggerUi.enabled }}
+
+Swagger UI, with every spec above:
+{{- if $base }}
+  {{ $base }}/
+{{- else if and (eq .Values.swaggerUi.service.type "NodePort") .Values.swaggerUi.service.nodePort }}
+  http://<node-ip>:{{ .Values.swaggerUi.service.nodePort }}/
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "camara.swaggerUiName" . }} 8080   # then http://localhost:8080/
+{{- end }}
+  It also serves every API above at the same address: for "Try it out", set apiRoot to that address.
+{{- end }}
+{{- if .Values.qualityondemand.enabled }}
+
+Quality On Demand keeps its sessions in {{ if .Values.qualityondemand.redis.enabled }}this release's Redis{{ if not .Values.qualityondemand.redis.persistence.enabled }} (no persistence: a restart forgets them){{ end }}{{ else }}{{ .Values.qualityondemand.redis.external.host }}:{{ .Values.qualityondemand.redis.external.port }}{{ end }}.
+{{- end }}
+{{- $authApis := (include "camara.authApis" . | fromYaml).apis }}
+{{- if include "camara.deployKeycloak" . }}
+
+Keycloak (this release): {{ .Values.global.camara.keycloak.publicUrl }}
+  Issuer:  {{ trimSuffix "/" .Values.global.camara.keycloak.publicUrl }}/realms/{{ include "camara.realm" . }}
+  Admin:   {{ trimSuffix "/" .Values.global.camara.keycloak.publicUrl }}/admin ({{ if .Values.keycloak.admin.existingSecret }}from Secret {{ .Values.keycloak.admin.existingSecret }}{{ else }}{{ .Values.keycloak.admin.username }}, password in Secret {{ include "camara.keycloakName" . }}{{ end }})
+{{- if and .Values.keycloak.realm.import (not .Values.keycloak.realm.existingConfigMap) }}
+  The bundled realm has test clients (acme-backend / acme-backend-secret, subscriber-app) and user alice / alice.
+  Change those secrets, or import a realm of your own (keycloak.realm.existingConfigMap), for anything shared.
+{{- if and .Values.swaggerUi.enabled (not (include "camara.swaggerUiUrl" .)) }}
+  WARNING: the realm doesn't know Swagger UI's address, so its Authorize can't get tokens. Give Swagger UI a fixed
+  address: swaggerUi.service.nodePort (with type NodePort), the Ingress, or keycloak.realm.swaggerUiUrl.
+{{- else if .Values.swaggerUi.enabled }}
+  Swagger UI's Authorize can get tokens from {{ include "camara.swaggerUiUrl" . }}.
+{{- end }}
+{{- end }}
+{{- if eq .Values.keycloak.database.vendor "dev-file" }}
+  Database: dev-file, lab only{{ if not .Values.keycloak.persistence.enabled }}, and not persisted: changes made in Keycloak are lost on restart{{ end }}.
+{{- end }}
+{{- else if $authApis }}
+
+Tokens come from your issuer: {{ .Values.global.camara.auth.issuerUri }}
+{{ include "camara.externalKeycloakSteps" . }}
+{{- end }}
+{{- end }}

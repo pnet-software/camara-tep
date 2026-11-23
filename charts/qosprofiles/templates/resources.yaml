@@ -1,0 +1,16 @@
+{{- /* Everything comes from the shared camara-lib chart; this chart only supplies values and NOTES */}}
+{{ include "camara-lib.serviceaccount" . }}
+---
+{{ include "camara-lib.configmap" . }}
+---
+{{ include "camara-lib.service" . }}
+---
+{{ include "camara-lib.deployment" . }}
+---
+{{ include "camara-lib.ingress" . }}
+---
+{{ include "camara-lib.hpa" . }}
+---
+{{ include "camara-lib.pdb" . }}
+---
+{{ include "camara-lib.servicemonitor" . }}

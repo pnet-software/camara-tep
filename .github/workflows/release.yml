@@ -1,0 +1,186 @@
+# Releases, one component per tag, to Docker Hub (namespace vars.DOCKERHUB_NAMESPACE):
+#
+# - <service>-vX.Y.Z (e.g. reachability-v1.0.0) tests that one service, then publishes
+#     image  docker.io/<namespace>/<service>:v1.0.0 (also the short SHA and latest)
+#     chart  oci://registry-1.docker.io/<namespace>/<service>-chart   1.0.0
+#   No other service is rebuilt or republished.
+# - camara-vX.Y.Z publishes the umbrella chart oci://registry-1.docker.io/<namespace>/camara-chart, made of the
+#   released service charts charts/camara/Chart.yaml pins; every pinned version must exist.
+#
+# Each release also creates its GitHub Release, with generated notes.
+# Needs the organization secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN, and the variable DOCKERHUB_NAMESPACE.
+name: release
+
+on:
+  push:
+    tags: ["*-v[0-9]+.[0-9]+.[0-9]+"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: v3.17.3
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      service: ${{ steps.parse.outputs.service }}
+      version: ${{ steps.parse.outputs.version }}
+      kind: ${{ steps.parse.outputs.kind }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse the tag
+        id: parse
+        run: |
+          SERVICE="${GITHUB_REF_NAME%-v*}"
+          VERSION="${GITHUB_REF_NAME##*-v}"
+          if [ "$SERVICE" = camara ]; then
+            KIND=umbrella
+          elif [ -d "services/$SERVICE" ] && [ -d "charts/$SERVICE" ]; then
+            KIND=service
+          else
+            echo "::error::$GITHUB_REF_NAME names no service (services/$SERVICE) and isn't camara-vX.Y.Z"
+            exit 1
+          fi
+          { echo "service=$SERVICE"; echo "version=$VERSION"; echo "kind=$KIND"; } >> "$GITHUB_OUTPUT"
+          echo "Releasing $SERVICE $VERSION ($KIND)"
+
+  test:
+    needs: tag
+    if: needs.tag.outputs.kind == 'service'
+    runs-on: ubuntu-latest
+    env:
+      SERVICE: ${{ needs.tag.outputs.service }}
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build and test
+        run: ./mvnw -B "-Drevision=$VERSION" -pl "services/$SERVICE" -am clean verify
+
+  helm-lint:
+    needs: tag
+    if: needs.tag.outputs.kind == 'service'
+    runs-on: ubuntu-latest
+    env:
+      SERVICE: ${{ needs.tag.outputs.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Lint and template
+        run: |
+          if ! grep -qx "name: $SERVICE-chart" "charts/$SERVICE/Chart.yaml"; then
+            echo "::error::charts/$SERVICE/Chart.yaml must have name: $SERVICE-chart"
+            exit 1
+          fi
+          helm dependency update "charts/$SERVICE"
+          helm lint "charts/$SERVICE" -f "charts/$SERVICE/ci-values.yaml"
+          helm template ci "charts/$SERVICE" -f "charts/$SERVICE/ci-values.yaml" > /dev/null
+
+  image:
+    needs: [tag, test]
+    runs-on: ubuntu-latest
+    env:
+      SERVICE: ${{ needs.tag.outputs.service }}
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build and push the image (Jib)
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+        # jib:build runs on every module in the reactor; only services have jib.skip=false. package, not compile:
+        # with compile the libraries resolve to target/classes, and Jib copies every one of them to
+        # /app/libs/classes.jar, so they overwrite each other
+        run: |
+          ./mvnw -B "-Drevision=$VERSION" -pl "services/$SERVICE" -am -DskipTests package jib:build \
+            "-Dimage=docker.io/$NAMESPACE/$SERVICE:v$VERSION" \
+            "-Djib.to.tags=${GITHUB_SHA::8},latest" \
+            "-Dimage.revision=$GITHUB_SHA" \
+            "-Djib.to.auth.username=$DOCKERHUB_USERNAME" \
+            "-Djib.to.auth.password=$DOCKERHUB_TOKEN"
+
+  helm-publish:
+    needs: [tag, image, helm-lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SERVICE: ${{ needs.tag.outputs.service }}
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Package and push the chart
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          echo "$DOCKERHUB_TOKEN" | helm registry login registry-1.docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+          helm dependency update "charts/$SERVICE"
+          helm package "charts/$SERVICE" --version "$VERSION" --app-version "v$VERSION" --destination dist
+          helm push dist/*.tgz "oci://registry-1.docker.io/$NAMESPACE"
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+
+  camara-publish:
+    needs: tag
+    if: needs.tag.outputs.kind == 'umbrella'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Lint with this commit's service charts
+        run: |
+          if ! grep -qx "name: camara-chart" charts/camara/Chart.yaml; then
+            echo "::error::charts/camara/Chart.yaml must have name: camara-chart"
+            exit 1
+          fi
+          sh charts/camara/local-charts.sh /tmp/camara
+          helm lint /tmp/camara -f charts/camara/ci-values.yaml
+          helm lint /tmp/camara -f charts/camara/ci-values-external.yaml
+      - name: Package the pinned service charts and push
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          echo "$DOCKERHUB_TOKEN" | helm registry login registry-1.docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+          # Fails if a pinned service chart version isn't released
+          helm dependency update charts/camara
+          helm lint charts/camara -f charts/camara/ci-values.yaml
+          helm package charts/camara --version "$VERSION" --app-version "v$VERSION" --destination dist
+          helm push dist/*.tgz "oci://registry-1.docker.io/$NAMESPACE"
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

@@ -1,0 +1,50 @@
+apiVersion: v2
+name: camara-chart
+description: Any set of the CAMARA APIs backed by TEP in one release, with one Swagger UI, and the Keycloak and Redis they need
+type: application
+# Overwritten by CI at package time: version = git tag without "v"
+version: 1.0.0
+appVersion: "v1.0.0"
+keywords:
+  - camara
+  - tep
+# The released service charts this chart is made of: one version per API, each running its own image (the chart's
+# appVersion). Bump a version here to upgrade that API; its <service>-vX.Y.Z tag must be released first.
+# Pulled from Docker Hub: helm dependency update charts/camara (after helm registry login, if they're private).
+# To try unreleased chart changes from this repository instead: charts/camara/local-charts.sh (see README.md)
+dependencies:
+  - name: reachability-chart
+    alias: reachability
+    version: 1.0.0
+    repository: oci://registry-1.docker.io/pnetrepo
+    condition: reachability.enabled
+  - name: roaming-chart
+    alias: roaming
+    version: 1.0.0
+    repository: oci://registry-1.docker.io/pnetrepo
+    condition: roaming.enabled
+  - name: locationverification-chart
+    alias: locationverification
+    version: 1.0.0
+    repository: oci://registry-1.docker.io/pnetrepo
+    condition: locationverification.enabled
+  - name: deviceswap-chart
+    alias: deviceswap
+    version: 1.0.0
+    repository: oci://registry-1.docker.io/pnetrepo
+    condition: deviceswap.enabled
+  - name: simswap-chart
+    alias: simswap
+    version: 1.0.0
+    repository: oci://registry-1.docker.io/pnetrepo
+    condition: simswap.enabled
+  - name: qosprofiles-chart
+    alias: qosprofiles
+    version: 1.0.0
+    repository: oci://registry-1.docker.io/pnetrepo
+    condition: qosprofiles.enabled
+  - name: qualityondemand-chart
+    alias: qualityondemand
+    version: 1.0.0
+    repository: oci://registry-1.docker.io/pnetrepo
+    condition: qualityondemand.enabled

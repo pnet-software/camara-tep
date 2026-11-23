@@ -1,0 +1,26 @@
+# Turns every optional template on so `helm lint` / `helm template` cover them in CI
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: locationverification.ci.local
+      paths:
+        - path: /location-verification
+          pathType: Prefix
+  tls:
+    - hosts:
+        - locationverification.ci.local
+      secretName: locationverification-tls
+autoscaling:
+  enabled: true
+serviceMonitor:
+  enabled: true
+imagePullSecrets:
+  - name: registry-pull
+extraEnv:
+  - name: EXAMPLE
+    value: "1"
+config:
+  authIssuerUri: https://keycloak.ci.local/realms/camara
+  extra:
+    EXAMPLE_SETTING: "1"

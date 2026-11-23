@@ -1,0 +1,54 @@
+# Local Keycloak and the services' auth tests. Works the same from bash and PowerShell; see README.md.
+#
+#   docker compose -f dev/keycloak/compose.yaml up -d --build --wait               Keycloak on :8180
+#   docker compose -f dev/keycloak/compose.yaml run --rm --build auth-test reachability
+#   docker compose -f dev/keycloak/compose.yaml down
+#
+# The service under test runs on this machine, outside Docker; the tests reach it, and Keycloak, through
+# host.docker.internal.
+name: camara-dev
+
+services:
+  keycloak:
+    build:
+      context: .
+      additional_contexts:
+        realm: ../../charts/camara/files
+    image: camara-keycloak
+    ports:
+      - "8180:8080"
+    healthcheck:
+      # The image has no curl: ask the management port by hand
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/localhost/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"UP"' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  auth-test:
+    build: ./auth-test
+    image: camara-auth-test
+    # Only with "run auth-test <service>", never with "up"
+    profiles: [test]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://host.docker.internal:8180}
+      API_ROOT: ${API_ROOT:-http://host.docker.internal:9091}
+      MANAGEMENT_URL: ${MANAGEMENT_URL:-http://host.docker.internal:8081}
+      # The rest pass through from your shell when set; auth-test.sh has the defaults
+      REALM: ${REALM:-}
+      CLIENT_ID: ${CLIENT_ID:-}
+      CLIENT_SECRET: ${CLIENT_SECRET:-}
+      USER_CLIENT_ID: ${USER_CLIENT_ID:-}
+      SUBSCRIBER: ${SUBSCRIBER:-}
+      SUBSCRIBER_PASSWORD: ${SUBSCRIBER_PASSWORD:-}
+      PHONE_NUMBER: ${PHONE_NUMBER:-}
+      TWO_LEGGED_ONLY: ${TWO_LEGGED_ONLY:-}

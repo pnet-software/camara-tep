@@ -1,0 +1,168 @@
+replicaCount: 2
+
+image:
+  repository: docker.io/pnetrepo/qualityondemand
+  # Defaults to the chart appVersion (the git tag the chart was released from)
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 8080
+  # Actuator (health, info, prometheus); never routed through the ingress
+  managementPort: 8081
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: qualityondemand.example.local
+      paths:
+        - path: /quality-on-demand
+          pathType: Prefix
+  tls: []
+
+# Application settings, rendered into a ConfigMap and passed as environment variables
+config:
+  # Empty: global.camara.tepBaseUrl when installed by the camara umbrella chart, else http://tep:8080/tep-api/v1
+  tepBaseUrl: ""
+  tepConnectTimeout: 2s
+  tepReadTimeout: 5s
+  logFormat: ecs
+  springdocEnabled: true
+  shutdownTimeout: 20s
+  javaToolOptions: "-XX:MaxRAMPercentage=75"
+  # Access tokens (the spec's openId scope). true needs authIssuerUri: the realm's issuer, exactly as it
+  # appears in tokens' "iss", e.g. https://keycloak.example/realms/camara. false: no auth, lab only.
+  # Empty: global.camara.auth.enabled when installed by the camara umbrella chart, else true
+  authEnabled: ""
+  # Empty: the umbrella's Keycloak or global.camara.auth.issuerUri, if any
+  authIssuerUri: ""
+  # Claim carrying the subscriber's phone number in three-legged tokens.
+  # Empty: global.camara.auth.phoneNumberClaim, else phone_number
+  authPhoneNumberClaim: ""
+  # Service-specific settings, added to the ConfigMap as ENV_NAME: value. Values may be templates.
+  extra:
+    # The Redis sessions are kept in: the bundled one (redis.enabled), else redis.external
+    REDIS_HOST: '{{ if .Values.redis.enabled }}{{ include "camara-lib.fullname" . }}-redis{{ else }}{{ required "redis.external.host is required with redis.enabled=false" .Values.redis.external.host }}{{ end }}'
+    REDIS_PORT: '{{ if .Values.redis.enabled }}6379{{ else }}{{ .Values.redis.external.port }}{{ end }}'
+    # Where TEP notifies the service of a session the network ended: this release's Service, which TEP must
+    # reach. /tep-notifications is not under the ingress path, so it is never public.
+    QOD_NOTIFICATION_DESTINATION: 'http://{{ include "camara-lib.fullname" . }}:8080/tep-notifications'
+    # The API's public root, the source of the CloudEvents sent to a session's sink, e.g. https://api.example.com
+    QOD_API_ROOT: "http://localhost:9091"
+    QOD_SCS_AS_ID: camara-qod
+
+# Extra environment for the container, e.g. secrets. Values may be templates.
+extraEnv: []
+extraEnvFrom: []
+
+# Environment from Secrets, as ENV_NAME: {name, key, optional}; templates, left out when name renders empty.
+# REDIS_PASSWORD comes from the bundled Redis's Secret (redis.auth.enabled) or redis.external.existingSecret.
+secretEnv:
+  REDIS_PASSWORD:
+    name: '{{ if .Values.redis.enabled }}{{ if .Values.redis.auth.enabled }}{{ default (printf "%s-redis" (include "camara-lib.fullname" .)) .Values.redis.auth.existingSecret }}{{ end }}{{ else }}{{ .Values.redis.external.existingSecret }}{{ end }}'
+    key: '{{ if .Values.redis.enabled }}{{ .Values.redis.auth.existingSecretKey }}{{ else }}{{ .Values.redis.external.existingSecretKey }}{{ end }}'
+
+# The Redis sessions are kept in: one pod per release, reachable only inside the cluster (templates/redis.yaml).
+# false: use the Redis in redis.external instead.
+redis:
+  enabled: true
+  # With enabled: false. The password, if it has one, comes from existingSecret
+  external:
+    host: ""
+    port: 6379
+    existingSecret: ""
+    existingSecretKey: password
+  image:
+    repository: redis
+    tag: "7.4-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    enabled: false
+    # A Secret of your own holding the password, or leave empty and set password to have the chart create one
+    existingSecret: ""
+    existingSecretKey: password
+    password: ""
+  # Off: sessions are lost when the Redis pod restarts (each then ends at its own time in TEP, unknown here)
+  persistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+    existingClaim: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 768Mi
+
+# Must exceed config.shutdownTimeout plus the preStop delay
+terminationGracePeriodSeconds: 35
+preStopSleepSeconds: 5
+
+probes:
+  startup:
+    periodSeconds: 3
+    failureThreshold: 40
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 5
+    failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

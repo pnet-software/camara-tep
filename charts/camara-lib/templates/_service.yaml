@@ -1,0 +1,21 @@
+{{- define "camara-lib.service" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "camara-lib.fullname" . }}
+  labels:
+    {{- include "camara-lib.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "camara-lib.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+    - name: management
+      port: {{ .Values.service.managementPort }}
+      targetPort: management
+      protocol: TCP
+{{- end }}

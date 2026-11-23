@@ -1,0 +1,168 @@
+# Pull requests and pushes to main: each service is tested and its chart linted only when its files, or shared code
+# (libs/, charts/camara-lib/, the root pom, .mvn/, CI config), changed. The camara umbrella chart is linted on any
+# chart change. Releases are in release.yml.
+#
+# Adding a service: add a filter for it below, like reachability's.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: v3.17.3
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      services: ${{ steps.services.outputs.list }}
+      camara: ${{ steps.filter.outputs.camara }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - "libs/**"
+              - "charts/camara-lib/**"
+              - "pom.xml"
+              - ".mvn/**"
+              - ".github/**"
+            camara:
+              - "charts/**"
+              - ".github/**"
+            deviceswap:
+              - *shared
+              - "services/deviceswap/**"
+              - "charts/deviceswap/**"
+            locationverification:
+              - *shared
+              - "services/locationverification/**"
+              - "charts/locationverification/**"
+            qosprofiles:
+              - *shared
+              - "services/qosprofiles/**"
+              - "charts/qosprofiles/**"
+            qualityondemand:
+              - *shared
+              - "services/qualityondemand/**"
+              - "charts/qualityondemand/**"
+            reachability:
+              - *shared
+              - "services/reachability/**"
+              - "charts/reachability/**"
+            roaming:
+              - *shared
+              - "services/roaming/**"
+              - "charts/roaming/**"
+            simswap:
+              - *shared
+              - "services/simswap/**"
+              - "charts/simswap/**"
+      - name: Services to test
+        id: services
+        env:
+          CHANGES: ${{ steps.filter.outputs.changes }}
+        run: echo "list=$(jq -c 'map(select(. != "shared" and . != "camara"))' <<< "$CHANGES")" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    env:
+      SERVICE: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build and test
+        # -am also builds and tests the libraries the service depends on
+        run: ./mvnw -B -pl "services/$SERVICE" -am clean verify
+      - name: Coverage
+        if: always()
+        run: |
+          CSV="services/$SERVICE/target/site/jacoco/jacoco.csv"
+          if [ -f "$CSV" ]; then
+            awk -F, 'NR>1 {m+=$8; c+=$9} END {printf "Line coverage: %.1f%%\n", 100*c/(m+c)}' "$CSV" \
+              | sed "s/^/$SERVICE: /" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports-${{ matrix.service }}
+          path: |
+            */*/target/surefire-reports/
+            */*/target/failsafe-reports/
+            services/${{ matrix.service }}/target/site/jacoco/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  helm-lint:
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    env:
+      SERVICE: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Lint and template
+        run: |
+          # helm push names the Docker Hub repository after the chart; <service>-chart keeps it apart from the image's
+          if ! grep -qx "name: $SERVICE-chart" "charts/$SERVICE/Chart.yaml"; then
+            echo "::error::charts/$SERVICE/Chart.yaml must have name: $SERVICE-chart"
+            exit 1
+          fi
+          # Vendors charts/camara-lib into the service chart
+          helm dependency update "charts/$SERVICE"
+          helm lint "charts/$SERVICE"
+          helm lint "charts/$SERVICE" -f "charts/$SERVICE/ci-values.yaml"
+          helm template ci "charts/$SERVICE" -f "charts/$SERVICE/ci-values.yaml" > /dev/null
+
+  camara-lint:
+    needs: changes
+    if: needs.changes.outputs.camara == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Lint the umbrella with this commit's service charts
+        run: |
+          if ! grep -qx "name: camara-chart" charts/camara/Chart.yaml; then
+            echo "::error::charts/camara/Chart.yaml must have name: camara-chart"
+            exit 1
+          fi
+          sh charts/camara/local-charts.sh /tmp/camara
+          helm lint /tmp/camara
+          helm lint /tmp/camara -f charts/camara/ci-values.yaml
+          helm lint /tmp/camara -f charts/camara/ci-values-external.yaml
+          helm template ci /tmp/camara -f charts/camara/ci-values.yaml > /dev/null
+          helm template ci /tmp/camara -f charts/camara/ci-values-external.yaml > /dev/null

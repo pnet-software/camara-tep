@@ -1,0 +1,50 @@
+# Everything on, with the chart's own Keycloak and Redis, so `helm lint` / `helm template` cover them in CI
+global:
+  camara:
+    imagePullSecrets:
+      - name: registry-pull
+    keycloak:
+      deploy: true
+      publicUrl: https://camara.ci.local/auth
+
+reachability:
+  enabled: true
+roaming:
+  enabled: true
+locationverification:
+  enabled: true
+deviceswap:
+  enabled: true
+simswap:
+  enabled: true
+qosprofiles:
+  enabled: true
+  # One API without tokens: its own setting wins over global.camara.auth.enabled
+  config:
+    authEnabled: false
+qualityondemand:
+  enabled: true
+  config:
+    extra:
+      QOD_API_ROOT: https://camara.ci.local
+  redis:
+    auth:
+      enabled: true
+      password: ci-only-password
+    persistence:
+      enabled: true
+
+keycloak:
+  admin:
+    password: ci-only-password
+  persistence:
+    enabled: true
+
+ingress:
+  enabled: true
+  className: nginx
+  host: camara.ci.local
+  tls:
+    - hosts:
+        - camara.ci.local
+      secretName: camara-tls
