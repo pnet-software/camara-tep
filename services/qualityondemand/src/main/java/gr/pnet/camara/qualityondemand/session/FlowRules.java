@@ -50,14 +50,16 @@ final class FlowRules {
     }
 
     /**
-     * The downlink and uplink rules, both "permit out" as TS 29.214 requires, with the direction in the addresses:
-     * {@code permit out ip from <server>[ ports] to <device>[ ports]}, then device to server.
+     * The downlink and uplink rules, encoded as TS 29.214 clause 5.3.8 defines (and TS 29.122's FlowInfo refers to):
+     * the direction "out" is downlink and "in" is uplink, each written from its packets' source to their destination:
+     * {@code permit out ip from <server>[ ports] to <device>[ ports]}, then
+     * {@code permit in ip from <device>[ ports] to <server>[ ports]}.
      */
     static List<String> flowDescriptions(String device, Ports devicePorts, String server, Ports serverPorts) {
         String deviceEnd = end(device + "/32", devicePorts);
         String serverEnd = end(network(server), serverPorts);
         return List.of("permit out ip from " + serverEnd + " to " + deviceEnd,
-                "permit out ip from " + deviceEnd + " to " + serverEnd);
+                "permit in ip from " + deviceEnd + " to " + serverEnd);
     }
 
     private static String end(String address, Ports ports) {

@@ -84,7 +84,7 @@ class SessionServiceTest {
         assertThat(store.expiry).containsEntry(session.id(), NOW.plusSeconds(600));
         assertThat(store.locks).isEmpty();
         verify(tep).createSession("10.45.0.9", List.of("permit out ip from 200.24.24.0/24 to 10.45.0.9/32",
-                "permit out ip from 10.45.0.9/32 to 200.24.24.0/24"), "QOS_E");
+                "permit in ip from 10.45.0.9/32 to 200.24.24.0/24"), "QOS_E");
         verify(notifier).statusChanged(session);
     }
 

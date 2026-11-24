@@ -55,12 +55,12 @@ class FlowRulesTest {
         assertThat(FlowRules.overlap("10.0.0.1", Ports.ANY, Ports.ANY, existing)).isFalse();
     }
 
-    // TS 29.214: "permit out" both ways, the direction given by which end is the source
+    // TS 29.214 clause 5.3.8: "out" is downlink and "in" uplink, each from its packets' source to their destination
     @Test
-    void flowDescriptionsAreDownlinkThenUplink() {
+    void flowDescriptionsAreDownlinkOutThenUplinkIn() {
         assertThat(FlowRules.flowDescriptions("10.45.0.9", Ports.ANY, "200.24.24.0/24", Ports.ANY))
                 .containsExactly("permit out ip from 200.24.24.0/24 to 10.45.0.9/32",
-                        "permit out ip from 10.45.0.9/32 to 200.24.24.0/24");
+                        "permit in ip from 10.45.0.9/32 to 200.24.24.0/24");
     }
 
     @Test
@@ -70,7 +70,7 @@ class FlowRulesTest {
 
         assertThat(FlowRules.flowDescriptions("10.45.0.9", devicePorts, "200.24.24.7/24", serverPorts))
                 .containsExactly("permit out ip from 200.24.24.0/24 443 to 10.45.0.9/32 5060,5070,5010-5020,7000",
-                        "permit out ip from 10.45.0.9/32 5060,5070,5010-5020,7000 to 200.24.24.0/24 443");
+                        "permit in ip from 10.45.0.9/32 5060,5070,5010-5020,7000 to 200.24.24.0/24 443");
     }
 
     @Test

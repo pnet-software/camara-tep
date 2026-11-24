@@ -35,7 +35,7 @@ Creating a session, in this order:
    - `ueIpv4Addr`: the device's address
    - `qosReference`: the `qosProfile`
    - `notificationDestination`: this service's `QOD_NOTIFICATION_DESTINATION`
-   - `flowInfo`: one flow with two TS 29.214 IP filter rules, both `permit out ip`, downlink then uplink, e.g. `permit out ip from 198.51.100.0/24 443 to 10.45.0.9/32` and `permit out ip from 10.45.0.9/32 to 198.51.100.0/24 443`
+   - `flowInfo`: one flow with two IP filter rules encoded as TS 29.214 clause 5.3.8 defines (`out` is downlink, `in` uplink, each from its packets' source to their destination), downlink then uplink, e.g. `permit out ip from 198.51.100.0/24 443 to 10.45.0.9/32` and `permit in ip from 10.45.0.9/32 to 198.51.100.0/24 443`
 6. TEP answers once the core has applied the QoS, so the session is `AVAILABLE` at once (there is no `REQUESTED` phase): stored in Redis, notified to the `sink`, and returned (201, with `Location`).
 
 The other operations:
